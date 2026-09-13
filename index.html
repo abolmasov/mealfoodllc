@@ -968,7 +968,10 @@ const CONFIG = {
   store: { name:"Meal Food", phone:"754-971-8667", email:"mealfoodllc@gmail.com",
            address:"250 N Federal Hwy, Hallandale Beach, FL 33009", lat:25.9875, lng:-80.1432 },
   radiusMiles: 25,
-  // ---- EmailJS (see EMAILJS-SETUP guide). Replace the 4 placeholders on your live domain ----
+  // Order mailer API. The page posts the order here and the service sends the
+  // mail via Resend; if it is unreachable the mailto fallback below takes over.
+  orderApi: "https://ag56a332iu.c39.airoapp.ai/api/order",
+  // ---- EmailJS (legacy, unused while orderApi is set) ----
   emailjs: {
     publicKey:   "YOUR_EMAILJS_PUBLIC_KEY",
     serviceId:   "YOUR_EMAILJS_SERVICE_ID",
@@ -1454,18 +1457,18 @@ document.getElementById("order-form").addEventListener("submit",function(ev){
     btn.innerHTML = `<span class="en">Place order</span><span class="ru">Оформить заказ</span>`;
   };
 
-  if(emailjsReady()){
-    ensureEjs();
-    const e=CONFIG.emailjs;
-    const params={...p};
-    // 1) send order to company, 2) send confirmation to customer
-    emailjs.send(e.serviceId, e.templateOrder, params)
-      .then(()=> e.templateConfirm && !e.templateConfirm.startsWith("YOUR_")
-                 ? emailjs.send(e.serviceId, e.templateConfirm, params) : Promise.resolve())
+  if(CONFIG.orderApi){
+    // The service sends both the order ticket and the customer confirmation.
+    fetch(CONFIG.orderApi,{
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(p)
+    })
+      .then(r=>{ if(!r.ok) throw new Error("mailer "+r.status); return r.json(); })
       .then(()=>finish(true))
-      .catch(err=>{ console.warn("EmailJS failed:",err); finish(false); });
+      .catch(err=>{ console.warn("Order mailer failed:",err); finish(false); });
   } else {
-    // demo / not configured -> show success + mailto backup
+    // not configured -> show success + mailto backup
     finish(false);
   }
 });
@@ -1792,9 +1795,15 @@ loadGoogleMaps();
         : '<a href="'+mailto(p)+'"><span class="en">Click here to email your request</span><span class="ru">Нажмите, чтобы отправить заявку письмом</span></a>';
       s.scrollIntoView({behavior:'smooth',block:'center'});
     };
-    if(ejsReady()){
-      try{emailjs.init({publicKey:CONFIG.emailjs.publicKey});}catch(e){}
-      emailjs.send(CONFIG.emailjs.serviceId,CONFIG.emailjs.templateOffice,p).then(function(){finish(true);}).catch(function(){finish(false);});
+    if(CONFIG.orderApi){
+      fetch(CONFIG.orderApi,{
+        method:"POST",
+        headers:{"Content-Type":"application/json"},
+        body:JSON.stringify(p)
+      })
+        .then(function(r){ if(!r.ok) throw new Error("mailer "+r.status); return r.json(); })
+        .then(function(){finish(true);})
+        .catch(function(err){ console.warn("Office mailer failed:",err); finish(false); });
     }else{finish(false);}
   });
 
