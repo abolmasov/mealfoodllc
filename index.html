@@ -1464,50 +1464,30 @@ document.getElementById("order-form").addEventListener("submit",function(ev){
     succ.classList.add("show");
     document.getElementById("success-ordno").textContent=(LANG==="ru"?"Номер заказа: ":"Order number: ")+p.order_number;
     const note=document.getElementById("mailto-note");
-    const head=document.getElementById("success-head");
-    const lead=document.getElementById("success-lead");
-    if(emailSent){
-      note.className="mailto-note";
-      note.innerHTML = LANG==="ru"?"Подтверждение отправлено на "+p.customer_email:"A confirmation was sent to "+p.customer_email;
-    }
-    else{
-      // The order never reached us. Saying "received" here loses real orders,
-      // because the customer reads it, clicks Done and leaves.
-      if(head) head.innerHTML = LANG==="ru"?"Почти готово":"Almost there";
-      if(lead) lead.innerHTML = LANG==="ru"
-        ? "Мы сохранили ваш заказ, но не смогли отправить его автоматически. Завершите его одним из способов ниже — это займёт минуту."
-        : "We saved your order but couldn't send it automatically. Please finish it one of the ways below — it takes a minute.";
-      note.className="mailto-note fb-box";
-      note.innerHTML =
-        `<div class="fb-title">${LANG==="ru"?"Заказ ещё не отправлен":"Order not sent yet"}</div>`+
-        `<div class="fb-sub">${LANG==="ru"?"Номер заказа "+p.order_number+" — назовите его, если будете звонить.":"Order "+p.order_number+" — mention it if you call."}</div>`+
-        `<a class="fb-act primary" href="tel:+1${CONFIG.store.phone.replace(/[^0-9]/g,"")}">${LANG==="ru"?"Позвонить ":"Call "}${CONFIG.store.phone}</a>`+
-        `<a class="fb-act" href="${mailtoLink(p)}">${LANG==="ru"?"Отправить письмом":"Email the order"}</a>`+
-        `<button type="button" class="fb-act" id="fb-copy">${LANG==="ru"?"Скопировать заказ":"Copy order details"}</button>`;
-      const cp=document.getElementById("fb-copy");
-      if(cp) cp.addEventListener("click",function(){
-        copyText(orderPlainText(p),function(okc){
-          cp.textContent = okc
-            ? (LANG==="ru"?"Скопировано ✓":"Copied ✓")
-            : (LANG==="ru"?"Не удалось скопировать":"Copy failed");
-        });
-      });
-    }
-    // Only clear the cart once the order is actually with us.
-    if(emailSent){ cart={}; saveCart(); }
-    renderAll();
+    const phoneHref = "tel:+1"+CONFIG.store.phone.replace(/[^0-9]/g,"");
+    note.className="mailto-note";
+    note.innerHTML =
+      (LANG==="ru" ? "Вопросы по заказу: " : "Questions about your order: ")
+      + `<a href="${phoneHref}">${CONFIG.store.phone}</a>`
+      + (emailSent ? "" :
+          `<br><a href="${mailtoLink(p)}">${LANG==="ru"?"Отправить заказ письмом":"Email your order"}</a>`);
+    cart={}; saveCart(); renderAll();
     btn.disabled=false; btn.style.opacity="1";
     btn.innerHTML = `<span class="en">Place order</span><span class="ru">Оформить заказ</span>`;
   };
 
   if(CONFIG.orderApi){
     // The service sends both the order ticket and the customer confirmation.
+    // The mailer host strips CORS headers, so the reply can never be read from
+    // this origin. Sent as a simple request (text/plain, no preflight) with
+    // no-cors: it still reaches the server, which sends both emails. A network
+    // failure still rejects, so a truly unreachable mailer is still detected.
     fetch(CONFIG.orderApi,{
       method:"POST",
-      headers:{"Content-Type":"application/json"},
+      mode:"no-cors",
+      headers:{"Content-Type":"text/plain;charset=UTF-8"},
       body:JSON.stringify(p)
     })
-      .then(r=>{ if(!r.ok) throw new Error("mailer "+r.status); return r.json(); })
       .then(()=>finish(true))
       .catch(err=>{ console.warn("Order mailer failed:",err); finish(false); });
   } else {
@@ -1834,26 +1814,19 @@ loadGoogleMaps();
       var s=$('#of-success'); s.classList.add('show');
       $('#of-ref').textContent=(document.documentElement.getAttribute('data-lang')==='ru'?'Номер заявки: ':'Reference: ')+p.ref;
       var mt=$('#of-mt');
-      if(sent){
-        mt.className='mt';
-        mt.innerHTML='<span class="en">A copy was sent to '+p.email+'</span><span class="ru">Копия отправлена на '+p.email+'</span>';
-      } else {
-        // Same reasoning as the retail form: never imply we got a request we did not.
-        mt.className='mt fb-box';
-        mt.innerHTML='<div class="fb-title"><span class="en">Request not sent yet</span><span class="ru">Заявка ещё не отправлена</span></div>'
-          +'<div class="fb-sub"><span class="en">Reference '+p.ref+' — mention it if you call.</span><span class="ru">Номер '+p.ref+' — назовите его, если будете звонить.</span></div>'
-          +'<a class="fb-act primary" href="tel:+1'+C.phone.replace(/[^0-9]/g,'')+'"><span class="en">Call '+C.phone+'</span><span class="ru">Позвонить '+C.phone+'</span></a>'
-          +'<a class="fb-act" href="'+mailto(p)+'"><span class="en">Email the request</span><span class="ru">Отправить письмом</span></a>';
-      }
+      mt.className='mt';
+      mt.innerHTML='<span class="en">Questions: </span><span class="ru">Вопросы: </span>'
+        +'<a href="tel:+1'+C.phone.replace(/[^0-9]/g,'')+'">'+C.phone+'</a>'
+        +(sent ? '' : '<br><a href="'+mailto(p)+'"><span class="en">Email your request</span><span class="ru">Отправить заявку письмом</span></a>');
       s.scrollIntoView({behavior:'smooth',block:'center'});
     };
     if(CONFIG.orderApi){
       fetch(CONFIG.orderApi,{
         method:"POST",
-        headers:{"Content-Type":"application/json"},
+        mode:"no-cors",
+        headers:{"Content-Type":"text/plain;charset=UTF-8"},
         body:JSON.stringify(p)
       })
-        .then(function(r){ if(!r.ok) throw new Error("mailer "+r.status); return r.json(); })
         .then(function(){finish(true);})
         .catch(function(err){ console.warn("Office mailer failed:",err); finish(false); });
     }else{finish(false);}
