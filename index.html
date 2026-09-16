@@ -358,6 +358,11 @@ footer{background:var(--hero-bg);color:var(--hero-ink);padding:56px 0 30px}
 .success .btn{margin-top:16px}
 .success .mailto-note{font-size:12.5px;color:var(--ink-2);margin-top:18px}
 .success .mailto-note a{color:var(--brand-ink);font-weight:700;text-decoration:underline}
+.fb-box{font-size:14px;background:#FFF4E5;border:1px solid #F0C99A;border-radius:14px;padding:16px;margin-top:18px;text-align:left}
+.fb-box .fb-title{font-weight:800;color:#9A4B00;margin-bottom:4px;font-size:14px}
+.fb-box .fb-sub{color:var(--ink-2);font-size:13px;margin-bottom:10px}
+.fb-box .fb-act{display:block;width:100%;box-sizing:border-box;text-align:center;padding:11px 14px;margin-top:8px;border-radius:999px;border:1px solid var(--brand-ink);background:#fff;color:var(--brand-ink);font-weight:700;font-size:14px;text-decoration:none;cursor:pointer;font-family:inherit}
+.fb-box .fb-act.primary{background:var(--brand-ink);color:#fff}
 
 /* toast */
 .toast{position:fixed;left:50%;bottom:26px;transform:translate(-50%,20px);background:var(--ink);color:var(--bg);
@@ -942,8 +947,8 @@ footer{background:var(--hero-bg);color:var(--hero-ink);padding:56px 0 30px}
     </div>
     <div class="success" id="success">
       <div class="check"><svg width="34" height="34" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M5 13l4 4L19 7"/></svg></div>
-      <h3><span class="en">Order received!</span><span class="ru">Заказ принят!</span></h3>
-      <p><span class="en">We've got your order and our team has started processing it. We'll call you shortly to confirm, and a confirmation email is on its way.</span><span class="ru">Мы получили ваш заказ, и наша команда уже начала его обработку. Мы скоро позвоним для подтверждения — письмо уже в пути.</span></p>
+      <h3 id="success-head"><span class="en">Order received!</span><span class="ru">Заказ принят!</span></h3>
+      <p id="success-lead"><span class="en">We've got your order and our team has started processing it. We'll call you shortly to confirm, and a confirmation email is on its way.</span><span class="ru">Мы получили ваш заказ, и наша команда уже начала его обработку. Мы скоро позвоним для подтверждения — письмо уже в пути.</span></p>
       <div class="ordno" id="success-ordno"></div>
       <button class="btn btn-primary" onclick="resetAll()"><span class="en">Done</span><span class="ru">Готово</span></button>
       <p class="mailto-note" id="mailto-note"></p>
@@ -1388,8 +1393,8 @@ function buildOrderPayload(fd){
     to_company: CONFIG.store.email
   };
 }
-function mailtoLink(p){
-  const body =
+function orderPlainText(p){
+  return (
 `NEW ORDER ${p.order_number}
 Placed: ${p.order_date}
 
@@ -1409,8 +1414,21 @@ ${p.items_text}
 Subtotal: ${p.subtotal}
 Delivery: ${p.delivery_fee}
 TOTAL:    ${p.total}
-`;
-  return `mailto:${CONFIG.store.email}?subject=${encodeURIComponent("New order "+p.order_number+" — "+p.customer_name)}&body=${encodeURIComponent(body)}`;
+`);
+}
+function mailtoLink(p){
+  return `mailto:${CONFIG.store.email}?subject=${encodeURIComponent("New order "+p.order_number+" — "+p.customer_name)}&body=${encodeURIComponent(orderPlainText(p))}`;
+}
+// Clipboard API needs a secure context and can be blocked; fall back to a
+// hidden textarea so the customer can always get their order out.
+function copyText(text,done){
+  const legacy=()=>{ try{ const ta=document.createElement("textarea"); ta.value=text;
+    ta.style.position="fixed"; ta.style.opacity="0"; document.body.appendChild(ta);
+    ta.select(); document.execCommand("copy"); document.body.removeChild(ta); done(true);
+  }catch(e){ done(false); } };
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(text).then(()=>done(true)).catch(legacy);
+  } else legacy();
 }
 function emailjsReady(){
   const e=CONFIG.emailjs;
@@ -1446,13 +1464,38 @@ document.getElementById("order-form").addEventListener("submit",function(ev){
     succ.classList.add("show");
     document.getElementById("success-ordno").textContent=(LANG==="ru"?"Номер заказа: ":"Order number: ")+p.order_number;
     const note=document.getElementById("mailto-note");
-    if(emailSent){ note.innerHTML = LANG==="ru"?"Подтверждение отправлено на "+p.customer_email:"A confirmation was sent to "+p.customer_email; }
-    else{
-      note.innerHTML = (LANG==="ru"
-        ? `Не удалось отправить автоматически. <a href="${mailtoLink(p)}">Нажмите здесь, чтобы отправить заказ письмом</a>.`
-        : `Couldn't auto-send. <a href="${mailtoLink(p)}">Click here to email your order</a> to finish.`);
+    const head=document.getElementById("success-head");
+    const lead=document.getElementById("success-lead");
+    if(emailSent){
+      note.className="mailto-note";
+      note.innerHTML = LANG==="ru"?"Подтверждение отправлено на "+p.customer_email:"A confirmation was sent to "+p.customer_email;
     }
-    cart={}; saveCart(); renderAll();
+    else{
+      // The order never reached us. Saying "received" here loses real orders,
+      // because the customer reads it, clicks Done and leaves.
+      if(head) head.innerHTML = LANG==="ru"?"Почти готово":"Almost there";
+      if(lead) lead.innerHTML = LANG==="ru"
+        ? "Мы сохранили ваш заказ, но не смогли отправить его автоматически. Завершите его одним из способов ниже — это займёт минуту."
+        : "We saved your order but couldn't send it automatically. Please finish it one of the ways below — it takes a minute.";
+      note.className="mailto-note fb-box";
+      note.innerHTML =
+        `<div class="fb-title">${LANG==="ru"?"Заказ ещё не отправлен":"Order not sent yet"}</div>`+
+        `<div class="fb-sub">${LANG==="ru"?"Номер заказа "+p.order_number+" — назовите его, если будете звонить.":"Order "+p.order_number+" — mention it if you call."}</div>`+
+        `<a class="fb-act primary" href="tel:+1${CONFIG.store.phone.replace(/[^0-9]/g,"")}">${LANG==="ru"?"Позвонить ":"Call "}${CONFIG.store.phone}</a>`+
+        `<a class="fb-act" href="${mailtoLink(p)}">${LANG==="ru"?"Отправить письмом":"Email the order"}</a>`+
+        `<button type="button" class="fb-act" id="fb-copy">${LANG==="ru"?"Скопировать заказ":"Copy order details"}</button>`;
+      const cp=document.getElementById("fb-copy");
+      if(cp) cp.addEventListener("click",function(){
+        copyText(orderPlainText(p),function(okc){
+          cp.textContent = okc
+            ? (LANG==="ru"?"Скопировано ✓":"Copied ✓")
+            : (LANG==="ru"?"Не удалось скопировать":"Copy failed");
+        });
+      });
+    }
+    // Only clear the cart once the order is actually with us.
+    if(emailSent){ cart={}; saveCart(); }
+    renderAll();
     btn.disabled=false; btn.style.opacity="1";
     btn.innerHTML = `<span class="en">Place order</span><span class="ru">Оформить заказ</span>`;
   };
@@ -1790,9 +1833,18 @@ loadGoogleMaps();
       $('#of-form').style.display='none';
       var s=$('#of-success'); s.classList.add('show');
       $('#of-ref').textContent=(document.documentElement.getAttribute('data-lang')==='ru'?'Номер заявки: ':'Reference: ')+p.ref;
-      $('#of-mt').innerHTML = sent
-        ? '<span class="en">A copy was sent to '+p.email+'</span><span class="ru">Копия отправлена на '+p.email+'</span>'
-        : '<a href="'+mailto(p)+'"><span class="en">Click here to email your request</span><span class="ru">Нажмите, чтобы отправить заявку письмом</span></a>';
+      var mt=$('#of-mt');
+      if(sent){
+        mt.className='mt';
+        mt.innerHTML='<span class="en">A copy was sent to '+p.email+'</span><span class="ru">Копия отправлена на '+p.email+'</span>';
+      } else {
+        // Same reasoning as the retail form: never imply we got a request we did not.
+        mt.className='mt fb-box';
+        mt.innerHTML='<div class="fb-title"><span class="en">Request not sent yet</span><span class="ru">Заявка ещё не отправлена</span></div>'
+          +'<div class="fb-sub"><span class="en">Reference '+p.ref+' — mention it if you call.</span><span class="ru">Номер '+p.ref+' — назовите его, если будете звонить.</span></div>'
+          +'<a class="fb-act primary" href="tel:+1'+C.phone.replace(/[^0-9]/g,'')+'"><span class="en">Call '+C.phone+'</span><span class="ru">Позвонить '+C.phone+'</span></a>'
+          +'<a class="fb-act" href="'+mailto(p)+'"><span class="en">Email the request</span><span class="ru">Отправить письмом</span></a>';
+      }
       s.scrollIntoView({behavior:'smooth',block:'center'});
     };
     if(CONFIG.orderApi){
